@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Step 1: センサー接続テスト</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; margin-top: 50px; }
+        button { font-size: 20px; padding: 10px 20px; }
+        .box { font-size: 24px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+    <h1>ケイデンスセンサー接続テスト</h1>
+    <button id="connectBtn">センサーを接続する</button>
+    
+    <div class="box">
+        接続状態: <span id="status" style="color: red;">未接続</span><br>
+        累計回転数: <span id="crankCount">0</span>
+    </div>
+
+    <script>
+        const Bluetooth_UUID_CSC_SERVICE = 'cycling_speed_and_cadence';
+        const Bluetooth_UUID_CSC_MEASUREMENT = 'cycling_speed_and_cadence_measurement';
+
+        const connectBtn = document.getElementById('connectBtn');
+        const statusSpan = document.getElementById('status');
+        const crankCountSpan = document.getElementById('crankCount');
+
+        connectBtn.addEventListener('click', async () => {
+            try {
+                statusSpan.textContent = 'スキャン中...';
+                
+                // Bluetoothデバイスの選択
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ services: [Bluetooth_UUID_CSC_SERVICE] }]
+                });
+
+                statusSpan.textContent = '接続中...';
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(Bluetooth_UUID_CSC_SERVICE);
+                const characteristic = await service.getCharacteristic(Bluetooth_UUID_CSC_MEASUREMENT);
+
+                await characteristic.startNotifications();
+                characteristic.addEventListener('characteristicvaluechanged', (event) => {
+                    const value = event.target.value;
+                    const flags = value.getUint8(0);
+                    const hasCrankData = (flags & 0x02) !== 0;
+
+                    if (hasCrankData) {
+                        let offset = 1;
+                        if ((flags & 0x01) !== 0) offset += 7; // ホイールデータスキップ
+
+                        const cumulativeCrankRevolutions = value.getUint16(offset, true);
+                        crankCountSpan.textContent = cumulativeCrankRevolutions;
+                    }
+                });
+
+                statusSpan.textContent = '接続完了！';
+                statusSpan.style.color = 'green';
+                connectBtn.disabled = true;
+
+            } catch (error) {
+                console.error(error);
+                statusSpan.textContent = 'エラー: ' + error;
+                statusSpan.style.color = 'red';
+            }
+        });
+    </script>
+</body>
+</html>
