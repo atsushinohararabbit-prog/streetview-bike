@@ -2,70 +2,69 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Step 1: センサー接続テスト</title>
+    <title>StreetView Bike Simulator</title>
     <style>
-        body { font-family: sans-serif; text-align: center; margin-top: 50px; }
-        button { font-size: 20px; padding: 10px 20px; }
-        .box { font-size: 24px; margin-top: 20px; }
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+        #controls {
+            position: absolute; top: 10px; left: 10px; z-index: 100;
+            background: rgba(255, 255, 255, 0.9); padding: 15px; border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        iframe { width: 100vw; height: 100vh; border: none; }
     </style>
 </head>
 <body>
 
-    <h1>ケイデンスセンサー接続テスト</h1>
-    <button id="connectBtn">センサーを接続する</button>
-    
-    <div class="box">
-        接続状態: <span id="status" style="color: red;">未接続</span><br>
-        累計回転数: <span id="crankCount">0</span>
+    <div id="controls">
+        <button id="connectBtn">センサーを接続する</button>
+        <p>状態: <span id="status">未接続</span></p>
+        <p>回転数: <span id="crankCount">0</span></p>
     </div>
 
-    <script>
-        const Bluetooth_UUID_CSC_SERVICE = 'cycling_speed_and_cadence';
-        const Bluetooth_UUID_CSC_MEASUREMENT = 'cycling_speed_and_cadence_measurement';
+    <!-- ここにあなたの指定したiframeを配置 -->
+    <iframe src="https://www.google.com/maps/embed?pb=!4v1786057369639!6m8!1m7!1sR8dTOIKa8_gkB05ExjgeJA!2m2!1d35.68448048319873!2d139.774663605387!3f188.45478665328218!4f-1.1096054439698548!5f0.7820865974627469" 
+            allowfullscreen="" loading="lazy"></iframe>
 
+    <script>
         const connectBtn = document.getElementById('connectBtn');
         const statusSpan = document.getElementById('status');
         const crankCountSpan = document.getElementById('crankCount');
 
         connectBtn.addEventListener('click', async () => {
             try {
-                statusSpan.textContent = 'スキャン中...';
-                
-                // Bluetoothデバイスの選択
                 const device = await navigator.bluetooth.requestDevice({
-                    filters: [{ services: [Bluetooth_UUID_CSC_SERVICE] }]
+                    filters: [{ services: ['cycling_speed_and_cadence'] }]
                 });
-
-                statusSpan.textContent = '接続中...';
                 const server = await device.gatt.connect();
-                const service = await server.getPrimaryService(Bluetooth_UUID_CSC_SERVICE);
-                const characteristic = await service.getCharacteristic(Bluetooth_UUID_CSC_MEASUREMENT);
+                const service = await server.getPrimaryService('cycling_speed_and_cadence');
+                const characteristic = await service.getCharacteristic('cycling_speed_and_cadence_measurement');
 
                 await characteristic.startNotifications();
+                statusSpan.textContent = '接続中...';
+                
+                let lastCount = -1;
                 characteristic.addEventListener('characteristicvaluechanged', (event) => {
                     const value = event.target.value;
                     const flags = value.getUint8(0);
-                    const hasCrankData = (flags & 0x02) !== 0;
+                    if ((flags & 0x02) !== 0) { // クランクデータがある場合
+                        let offset = (flags & 0x01) !== 0 ? 8 : 1;
+                        const count = value.getUint16(offset, true);
+                        crankCountSpan.textContent = count;
 
-                    if (hasCrankData) {
-                        let offset = 1;
-                        if ((flags & 0x01) !== 0) offset += 7; // ホイールデータスキップ
-
-                        const cumulativeCrankRevolutions = value.getUint16(offset, true);
-                        crankCountSpan.textContent = cumulativeCrankRevolutions;
+                        if (lastCount !== -1 && count !== lastCount) {
+                            pressUpArrow();
+                        }
+                        lastCount = count;
                     }
                 });
-
-                statusSpan.textContent = '接続完了！';
-                statusSpan.style.color = 'green';
-                connectBtn.disabled = true;
-
-            } catch (error) {
-                console.error(error);
-                statusSpan.textContent = 'エラー: ' + error;
-                statusSpan.style.color = 'red';
-            }
+                statusSpan.textContent = '走行準備OK';
+            } catch (err) { statusSpan.textContent = 'エラー: ' + err; }
         });
+
+        function pressUpArrow() {
+            const event = new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true });
+            document.dispatchEvent(event);
+        }
     </script>
 </body>
 </html>
