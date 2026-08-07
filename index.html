@@ -73,9 +73,35 @@
         });
 
         function pressUpArrow() {
-            const event = new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true });
-            document.dispatchEvent(event);
-        }
+    // 1. iframe要素を取得する
+    const iframe = document.querySelector('iframe');
+    
+    // 2. iframeの中にある「画面中央付近」を特定してクリックイベントを送る
+    // (iframeの操作には、キーボードよりクリックの方が反応が良いため)
+    const centerX = iframe.offsetWidth / 2;
+    const centerY = iframe.offsetHeight / 2;
+
+    // iframe内部の要素に対してクリックイベントをシミュレート
+    iframe.contentWindow.postMessage({
+        type: 'click',
+        x: centerX,
+        y: centerY
+    }, '*');
+    
+    // もし上記でダメなら、シンプルに「画面をタップする」動作をシミュレート
+    // これを記述しておくと、iframeが反応しやすくなります
+    const event = new MouseEvent('click', {
+        view: window,
+        bubbles: true,
+        cancelable: true,
+        clientX: centerX,
+        clientY: centerY
+    });
+    iframe.dispatchEvent(event);
+    
+    console.log("進む信号を送りました");
+}
+
     </script>
 </body>
 </html>
