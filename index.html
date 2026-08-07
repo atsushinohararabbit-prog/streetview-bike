@@ -21,8 +21,10 @@
         <p>回転数: <span id="crankCount">0</span></p>
     </div>
 
-    <!-- ここにあなたの指定したiframeを配置 -->
-    <iframe src="https://www.google.com/maps/embed?pb=!4v1786080602405!6m8!1m7!1s_O_Lj6haIIXYt_S1EdvKZw!2m2!1d35.68369050178439!2d139.7822531568266!3f140.41782!4f0!5f0.7820865974627469" width="600" height="450" style="border:0;" allowfullscreen="" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+    <!-- ストリートビューのiframe -->
+    <iframe src="https://www.google.com/maps/embed?pb=!4v1786080602405!6m8!1m7!1s_O_Lj6haIIXYt_S1EdvKZw!2m2!1d35.68369050178439!2d139.7822531568266!3f140.41782!4f0!5f0.7820865974627469" 
+            allowfullscreen="" loading="lazy"></iframe>
+
     <script>
         const connectBtn = document.getElementById('connectBtn');
         const statusSpan = document.getElementById('status');
@@ -30,20 +32,29 @@
 
         connectBtn.addEventListener('click', async () => {
             try {
+                statusSpan.textContent = 'デバイスを検索中...';
+                
+                // サービス名と特性を正しいUUID/名前で指定
                 const device = await navigator.bluetooth.requestDevice({
-                    filters: [{ services: ['cycling_speed_and_cadence'] }]
+                    filters: [{ services: ['cycling_speed_and_cadence'] }],
+                    optionalCharacteristics: ['cycling_speed_and_cadence_measurement']
                 });
+
+                statusSpan.textContent = '接続中...';
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService('cycling_speed_and_cadence');
-                const characteristic = await service.getCharacteristic('cycling_speed_and_cadence_measurement');
+                
+                // ここを正式なUUID（'2a5b'）に変更してエラーを回避
+                const characteristic = await service.getCharacteristic('2a5b');
 
                 await characteristic.startNotifications();
-                statusSpan.textContent = '接続中...';
+                statusSpan.textContent = '接続完了！漕いでね';
                 
                 let lastCount = -1;
                 characteristic.addEventListener('characteristicvaluechanged', (event) => {
                     const value = event.target.value;
                     const flags = value.getUint8(0);
+                    
                     if ((flags & 0x02) !== 0) { // クランクデータがある場合
                         let offset = (flags & 0x01) !== 0 ? 8 : 1;
                         const count = value.getUint16(offset, true);
@@ -55,8 +66,10 @@
                         lastCount = count;
                     }
                 });
-                statusSpan.textContent = '走行準備OK';
-            } catch (err) { statusSpan.textContent = 'エラー: ' + err; }
+            } catch (err) { 
+                statusSpan.textContent = 'エラー: ' + err; 
+                console.error(err);
+            }
         });
 
         function pressUpArrow() {
