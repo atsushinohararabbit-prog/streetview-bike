@@ -21,7 +21,6 @@
         <p>回転数: <span id="crankCount">0</span></p>
     </div>
 
-    <!-- ストリートビューのiframe -->
     <iframe src="https://www.google.com/maps/embed?pb=!4v1786080602405!6m8!1m7!1s_O_Lj6haIIXYt_S1EdvKZw!2m2!1d35.68369050178439!2d139.7822531568266!3f140.41782!4f0!5f0.7820865974627469" 
             allowfullscreen="" loading="lazy"></iframe>
 
@@ -34,74 +33,56 @@
             try {
                 statusSpan.textContent = 'デバイスを検索中...';
                 
-                // サービス名と特性を正しいUUID/名前で指定
                 const device = await navigator.bluetooth.requestDevice({
-                    filters: [{ services: ['cycling_speed_and_cadence'] }],
-                    optionalCharacteristics: ['cycling_speed_and_cadence_measurement']
+                    filters: [{ services: ['cycling_speed_and_cadence'] }]
                 });
 
                 statusSpan.textContent = '接続中...';
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService('cycling_speed_and_cadence');
-                
-                // ここを正式なUUID（'2a5b'）に変更してエラーを回避
                 const characteristic = await service.getCharacteristic('2a5b');
 
                 await characteristic.startNotifications();
                 statusSpan.textContent = '接続完了！漕いでね';
                 
                 let lastCount = -1;
+                
+                // ==========================================
+                // ▼▼▼ 【ここから下を書き換える（または追加する）】 ▼▼▼
+                // ==========================================
                 characteristic.addEventListener('characteristicvaluechanged', (event) => {
                     const value = event.target.value;
                     const flags = value.getUint8(0);
                     
-                    if ((flags & 0x02) !== 0) { // クランクデータがある場合
+                    if ((flags & 0x02) !== 0) {
                         let offset = (flags & 0x01) !== 0 ? 8 : 1;
                         const count = value.getUint16(offset, true);
                         crankCountSpan.textContent = count;
 
                         if (lastCount !== -1 && count !== lastCount) {
-                            pressUpArrow();
+                            // 漕いだ瞬間にiframeへクリック（前進）信号を送る
+                            const iframe = document.querySelector('iframe');
+                            if (iframe) {
+                                const clickEvent = new MouseEvent('click', {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    view: window,
+                                    clientX: window.innerWidth / 2,
+                                    clientY: window.innerHeight / 2
+                                });
+                                iframe.dispatchEvent(clickEvent);
+                            }
                         }
                         lastCount = count;
                     }
                 });
+                // ▲▲▲ 【ここまで】 ▲▲▲
+
             } catch (err) { 
                 statusSpan.textContent = 'エラー: ' + err; 
                 console.error(err);
             }
         });
-
-        function pressUpArrow() {
-    // 1. iframe要素を取得する
-    const iframe = document.querySelector('iframe');
-    
-    // 2. iframeの中にある「画面中央付近」を特定してクリックイベントを送る
-    // (iframeの操作には、キーボードよりクリックの方が反応が良いため)
-    const centerX = iframe.offsetWidth / 2;
-    const centerY = iframe.offsetHeight / 2;
-
-    // iframe内部の要素に対してクリックイベントをシミュレート
-    iframe.contentWindow.postMessage({
-        type: 'click',
-        x: centerX,
-        y: centerY
-    }, '*');
-    
-    // もし上記でダメなら、シンプルに「画面をタップする」動作をシミュレート
-    // これを記述しておくと、iframeが反応しやすくなります
-    const event = new MouseEvent('click', {
-        view: window,
-        bubbles: true,
-        cancelable: true,
-        clientX: centerX,
-        clientY: centerY
-    });
-    iframe.dispatchEvent(event);
-    
-    console.log("進む信号を送りました");
-}
-
     </script>
 </body>
 </html>
