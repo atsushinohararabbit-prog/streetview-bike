@@ -2,16 +2,18 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>StreetView Bike Simulator</title>
+    <title>Bike Simulator API Version</title>
     <style>
         body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+        #map { width: 100vw; height: 100vh; }
         #controls {
             position: absolute; top: 10px; left: 10px; z-index: 100;
             background: rgba(255, 255, 255, 0.9); padding: 15px; border-radius: 8px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         }
-        iframe { width: 100vw; height: 100vh; border: none; }
     </style>
+    <!-- APIキーをセット -->
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA_OhOog3XKVQhOlTJEqmS8VXMNbr859j0&callback=initMap"></script>
 </head>
 <body>
 
@@ -20,23 +22,34 @@
         <p>状態: <span id="status">未接続</span></p>
         <p>回転数: <span id="crankCount">0</span></p>
     </div>
-
-    <iframe src="https://www.google.com/maps/embed?pb=!4v1786080602405!6m8!1m7!1s_O_Lj6haIIXYt_S1EdvKZw!2m2!1d35.68369050178439!2d139.7822531568266!3f140.41782!4f0!5f0.7820865974627469" 
-            allowfullscreen="" loading="lazy"></iframe>
+    
+    <div id="map"></div>
 
     <script>
+        let panorama;
+
+        function initMap() {
+            // 東京駅周辺のストリートビューを表示
+            panorama = new google.maps.StreetViewPanorama(document.getElementById('map'), {
+                pano: '_O_Lj6haIIXYt_S1EdvKZw',
+                pov: { heading: 0, pitch: 0 },
+                motionTracking: false,
+                motionTrackingControl: false,
+                linksControl: false, // 地面の矢印を消す（自前で制御するため）
+                zoomControl: false
+            });
+        }
+
+        // センサー接続処理
         const connectBtn = document.getElementById('connectBtn');
         const statusSpan = document.getElementById('status');
         const crankCountSpan = document.getElementById('crankCount');
 
         connectBtn.addEventListener('click', async () => {
             try {
-                statusSpan.textContent = 'デバイスを検索中...';
-                
                 const device = await navigator.bluetooth.requestDevice({
                     filters: [{ services: ['cycling_speed_and_cadence'] }]
                 });
-
                 statusSpan.textContent = '接続中...';
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService('cycling_speed_and_cadence');
@@ -44,44 +57,26 @@
 
                 await characteristic.startNotifications();
                 statusSpan.textContent = '接続完了！漕いでね';
-                
+
                 let lastCount = -1;
-                
-                // ==========================================
-                // ▼▼▼ 【ここから下を書き換える（または追加する）】 ▼▼▼
-                // ==========================================
                 characteristic.addEventListener('characteristicvaluechanged', (event) => {
                     const value = event.target.value;
                     const flags = value.getUint8(0);
-                    
                     if ((flags & 0x02) !== 0) {
-                        let offset = (flags & 0x01) !== 0 ? 8 : 1;
-                        const count = value.getUint16(offset, true);
+                        const count = value.getUint16((flags & 0x01) !== 0 ? 8 : 1, true);
                         crankCountSpan.textContent = count;
 
                         if (lastCount !== -1 && count !== lastCount) {
-                            // 漕いだ瞬間にiframeへクリック（前進）信号を送る
-                            const iframe = document.querySelector('iframe');
-                            if (iframe) {
-                                const clickEvent = new MouseEvent('click', {
-                                    bubbles: true,
-                                    cancelable: true,
-                                    view: window,
-                                    clientX: window.innerWidth / 2,
-                                    clientY: window.innerHeight / 2
-                                });
-                                iframe.dispatchEvent(clickEvent);
+                            // 前進処理：リンクを取得して次の地点へ飛ぶ
+                            const links = panorama.getLinks();
+                            if (links && links.length > 0) {
+                                panorama.setPano(links[0].pano);
                             }
                         }
                         lastCount = count;
                     }
                 });
-                // ▲▲▲ 【ここまで】 ▲▲▲
-
-            } catch (err) { 
-                statusSpan.textContent = 'エラー: ' + err; 
-                console.error(err);
-            }
+            } catch (err) { statusSpan.textContent = 'エラー: ' + err; }
         });
     </script>
 </body>
