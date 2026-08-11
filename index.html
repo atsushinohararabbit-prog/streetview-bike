@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Bike Simulator V1.1.1</title>
+    <title>Bike Simulator V1.4.0</title>
     <style>
         body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
         #map { width: 100vw; height: 100vh; }
@@ -11,97 +11,66 @@
             background: rgba(255, 255, 255, 0.9); padding: 15px; border-radius: 8px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         }
+        #miniMap {
+            position: absolute; bottom: 20px; left: 20px; width: 200px; height: 200px;
+            z-index: 100; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        .input-group { margin-top: 10px; }
     </style>
-    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA_OhOog3XKVQhOlTJEqmS8VXMNbr859j0&callback=initMap"></script>
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA_OhOog3XKVQhOlTJEqmS8VXMNbr859j0
+&callback=initMap"></script>
 </head>
 <body>
-
     <div id="controls">
-        <button id="connectBtn">センサーを接続する</button>
-        <p>Ver: 1.1.1 (2026-08-07)</p>
+        <button id="connectBtn">センサーを接続</button>
+        <button id="getPanoBtn">現在地IDを取得</button>
+        <div class="input-group">
+            <input type="text" id="panoInput" placeholder="パノラマIDを入力">
+            <button id="applyPanoBtn">場所を適用</button>
+        </div>
+        <p>Ver: 1.4.0</p>
         <p>状態: <span id="status">未接続</span></p>
-        <p>回転数: <span id="crankCount">0</span></p>
     </div>
     
     <div id="map"></div>
+    <div id="miniMap"></div>
 
     <script>
-        let panorama;
+        let panorama, miniMap, marker;
         let lastPanoId = localStorage.getItem('bike_last_pano') || '_O_Lj6haIIXYt_S1EdvKZw';
 
         function initMap() {
             panorama = new google.maps.StreetViewPanorama(document.getElementById('map'), {
-                pano: lastPanoId,
-                pov: { heading: 0, pitch: 0 },
-                motionTracking: false,
-                motionTrackingControl: false,
-                linksControl: false, 
-                zoomControl: false
+                pano: lastPanoId, pov: { heading: 0, pitch: 0 },
+                motionTracking: false, motionTrackingControl: false, linksControl: false, zoomControl: false
             });
 
-            // 地点が動いた際に保存する
+            miniMap = new google.maps.Map(document.getElementById('miniMap'), {
+                zoom: 16, center: {lat: 35.6812, lng: 139.7671}, disableDefaultUI: true
+            });
+            marker = new google.maps.Marker({ map: miniMap, icon: 'https://maps.google.com/mapfiles/ms/micons/bike.png' });
+
             panorama.addListener('pano_changed', () => {
-                const currentPano = panorama.getPano();
-                localStorage.setItem('bike_last_pano', currentPano);
+                const pos = panorama.getPosition();
+                if(pos) {
+                    const id = panorama.getPano();
+                    localStorage.setItem('bike_last_pano', id);
+                    miniMap.setCenter(pos);
+                    marker.setPosition(pos);
+                }
             });
         }
 
-        const connectBtn = document.getElementById('connectBtn');
-        const statusSpan = document.getElementById('status');
-        const crankCountSpan = document.getElementById('crankCount');
+        document.getElementById('getPanoBtn').addEventListener('click', () => {
+            prompt("現在のパノラマIDをコピーしてください:", panorama.getPano());
+        });
 
-        connectBtn.addEventListener('click', async () => {
-            try {
-                statusSpan.textContent = 'デバイスを検索中...';
-                const device = await navigator.bluetooth.requestDevice({
-                    filters: [{ services: ['cycling_speed_and_cadence'] }]
-                });
-
-                statusSpan.textContent = '接続中...';
-                const server = await device.gatt.connect();
-                const service = await server.getPrimaryService('cycling_speed_and_cadence');
-                const characteristic = await service.getCharacteristic('2a5b');
-
-                await characteristic.startNotifications();
-                statusSpan.textContent = '接続完了！';
-
-                let lastCount = -1;
-                let moveToggle = 0; // 速度調整用のフラグ
-
-                characteristic.addEventListener('characteristicvaluechanged', (event) => {
-                    const value = event.target.value;
-                    const flags = value.getUint8(0);
-                    
-                    if ((flags & 0x02) !== 0) {
-                        const count = value.getUint16((flags & 0x01) !== 0 ? 8 : 1, true);
-                        crankCountSpan.textContent = count;
-
-                        if (lastCount !== -1 && count !== lastCount) {
-                            // 2回に1回だけ進むことで速度を半分に
-                            moveToggle++;
-                            if (moveToggle % 2 === 0) {
-                                const links = panorama.getLinks();
-                                const currentPov = panorama.getPov();
-
-                                if (links && links.length > 0) {
-                                    let bestLink = links[0];
-                                    let minDiff = 360;
-                                    for (let i = 0; i < links.length; i++) {
-                                        let diff = Math.abs(links[i].heading - currentPov.heading);
-                                        if (diff > 180) diff = 360 - diff;
-                                        if (diff < minDiff) { minDiff = diff; bestLink = links[i]; }
-                                    }
-                                    if (minDiff < 90) {
-                                        panorama.setPano(bestLink.pano);
-                                        panorama.setPov({ heading: bestLink.heading, pitch: 0 });
-                                    }
-                                }
-                            }
-                        }
-                        lastCount = count;
-                    }
-                });
-            } catch (err) { statusSpan.textContent = 'エラー: ' + err; }
+        document.getElementById('applyPanoBtn').addEventListener('click', () => {
+            const newId = document.getElementById('panoInput').value;
+            if(newId) {
+                localStorage.setItem('bike_last_pano', newId);
+                location.reload();
+            }
         });
     </script>
 </body>
