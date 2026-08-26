@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Bike Simulator V1.4.0</title>
+    <title>Bike Simulator V1.4.2</title>
     <style>
         body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
         #map { width: 100vw; height: 100vh; }
@@ -15,20 +15,17 @@
             position: absolute; bottom: 20px; left: 20px; width: 200px; height: 200px;
             z-index: 100; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5);
         }
-        .input-group { margin-top: 10px; }
     </style>
-    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA_OhOog3XKVQhOlTJEqmS8VXMNbr859j0
-&callback=initMap"></script>
 </head>
 <body>
     <div id="controls">
         <button id="connectBtn">センサーを接続</button>
         <button id="getPanoBtn">現在地IDを取得</button>
-        <div class="input-group">
+        <div style="margin-top:10px;">
             <input type="text" id="panoInput" placeholder="パノラマIDを入力">
             <button id="applyPanoBtn">場所を適用</button>
         </div>
-        <p>Ver: 1.4.0</p>
+        <p>Ver: 1.4.2</p>
         <p>状態: <span id="status">未接続</span></p>
     </div>
     
@@ -36,6 +33,24 @@
     <div id="miniMap"></div>
 
     <script>
+        // 1. APIキーをiPadから読み出す（なければ入力してもらう）
+        let apiKey = localStorage.getItem('google_map_api_key');
+        if (!apiKey) {
+            apiKey = prompt("Google Maps APIキーを入力してください:");
+            if (apiKey) localStorage.setItem('google_map_api_key', apiKey);
+        }
+
+        // 2. キーを使ってAPIを動的に読み込む
+        if (apiKey) {
+            const script = document.createElement('script');
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap`;
+            script.async = true;
+            script.defer = true;
+            document.head.appendChild(script);
+        } else {
+            alert("APIキーがないため起動できません。ページをリロードして入力してください。");
+        }
+
         let panorama, miniMap, marker;
         let lastPanoId = localStorage.getItem('bike_last_pano') || '_O_Lj6haIIXYt_S1EdvKZw';
 
@@ -61,12 +76,37 @@
             });
         }
 
+        // --- Bluetoothセンサー接続処理 ---
+        document.getElementById('connectBtn').addEventListener('click', async () => {
+            const statusEl = document.getElementById('status');
+            try {
+                statusEl.textContent = 'デバイスをスキャン中...';
+                // フィットネス機器サービス（CSCなど）をスキャン
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ services: ['cycling_speed_and_cadence'] }]
+                });
+                
+                statusEl.textContent = '接続中...';
+                const server = await device.gatt.connect();
+                statusEl.textContent = '接続完了！';
+                
+                // ここにセンサーからのデータ取得（Notify設定など）の処理を記述します
+                device.addEventListener('gattserverdisconnected', () => {
+                    statusEl.textContent = '切断されました';
+                });
+            } catch (error) {
+                console.error(error);
+                statusEl.textContent = '接続失敗・キャンセル';
+            }
+        });
+
+        // --- パノラマID操作関連 ---
         document.getElementById('getPanoBtn').addEventListener('click', () => {
             prompt("現在のパノラマIDをコピーしてください:", panorama.getPano());
         });
 
         document.getElementById('applyPanoBtn').addEventListener('click', () => {
-            const newId = document.getElementById('panoInput').value;
+            const newId = document.getElementById('panoInput'.trim()).value;
             if(newId) {
                 localStorage.setItem('bike_last_pano', newId);
                 location.reload();
