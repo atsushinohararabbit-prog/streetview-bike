@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Bike Simulator V1.4.3</title>
+    <title>Bike Simulator V1.4.4</title>
     <style>
         body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
         #map { width: 100vw; height: 100vh; }
@@ -25,7 +25,7 @@
             <input type="text" id="panoInput" placeholder="パノラマIDを入力">
             <button id="applyPanoBtn">場所を適用</button>
         </div>
-        <p>Ver: 1.4.3</p>
+        <p>Ver: 1.4.4</p>
         <p>状態: <span id="status">未接続</span></p>
     </div>
     
@@ -76,7 +76,7 @@
             });
         }
 
-        // --- Bluetoothセンサー接続 ＆ 漕ぎ連動処理 ---
+        // --- Bluetoothセンサー接続 ＆ 前進専用ロジック ---
         document.getElementById('connectBtn').addEventListener('click', async () => {
             const statusEl = document.getElementById('status');
             try {
@@ -94,7 +94,6 @@
                 
                 let lastRevs = null;
 
-                // センサーからデータが届いたときのイベント
                 characteristic.startNotifications();
                 characteristic.addEventListener('characteristicvaluechanged', (event) => {
                     const value = event.target.value;
@@ -106,23 +105,44 @@
                     let offset = 1;
 
                     if (isWheelDataPresent) {
-                        currentRevs = value.getUint32(offset, true); // Cumulative Wheel Revolutions
+                        currentRevs = value.getUint32(offset, true);
                         offset += 6;
                     } else if (isCrankDataPresent) {
-                        currentRevs = value.getUint16(offset, true); // Cumulative Crank Revolutions
+                        currentRevs = value.getUint16(offset, true);
                         offset += 4;
                     }
 
-                    // 前回値と比較してペダルが回っていたら前進
                     if (currentRevs !== null) {
-                        if (lastRevs !== null && currentRevs > lastRevs) {
+                        // 初回は基準値を入れるだけ
+                        if (lastRevs === null) {
+                            lastRevs = currentRevs;
+                        }
+
+                        // 前回より回転数が進んでいる場合のみ前進処理を行う
+                        if (currentRevs > lastRevs) {
                             const links = panorama.getLinks();
                             if (links && links.length > 0) {
-                                // 正面に近いリンク（あるいは最初のリンク）へ移動
-                                panorama.setPano(links[0].pano);
+                                const pov = panorama.getPov();
+                                // 現在の視点（heading）に最も近い方向にあるリンクを探して進む（行き来を防止）
+                                let bestLink = links[0];
+                                let minAngleDiff = 360;
+
+                                links.forEach(link => {
+                                    let diff = Math.abs(link.heading - pov.heading);
+                                    if (diff > 180) diff = 360 - diff;
+                                    if (diff < minAngleDiff) {
+                                        minAngleDiff = diff;
+                                        bestLink = link;
+                                    }
+                                });
+
+                                panorama.setPano(bestLink.pano);
                             }
+                            lastRevs = currentRevs;
+                        } else if (currentRevs < lastRevs) {
+                            // センサーの値がリセットされた場合の対策
+                            lastRevs = currentRevs;
                         }
-                        lastRevs = currentRevs;
                     }
                 });
                 
