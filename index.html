@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Bike Simulator V1.4.2</title>
+    <title>Bike Simulator V1.4.3</title>
     <style>
         body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
         #map { width: 100vw; height: 100vh; }
@@ -25,7 +25,7 @@
             <input type="text" id="panoInput" placeholder="パノラマIDを入力">
             <button id="applyPanoBtn">場所を適用</button>
         </div>
-        <p>Ver: 1.4.2</p>
+        <p>Ver: 1.4.3</p>
         <p>状態: <span id="status">未接続</span></p>
     </div>
     
@@ -76,21 +76,56 @@
             });
         }
 
-        // --- Bluetoothセンサー接続処理 ---
+        // --- Bluetoothセンサー接続 ＆ 漕ぎ連動処理 ---
         document.getElementById('connectBtn').addEventListener('click', async () => {
             const statusEl = document.getElementById('status');
             try {
                 statusEl.textContent = 'デバイスをスキャン中...';
-                // フィットネス機器サービス（CSCなど）をスキャン
                 const device = await navigator.bluetooth.requestDevice({
                     filters: [{ services: ['cycling_speed_and_cadence'] }]
                 });
                 
                 statusEl.textContent = '接続中...';
                 const server = await device.gatt.connect();
-                statusEl.textContent = '接続完了！';
+                const service = await server.getPrimaryService('cycling_speed_and_cadence');
+                const characteristic = await service.getCharacteristic('csc_measurement');
                 
-                // ここにセンサーからのデータ取得（Notify設定など）の処理を記述します
+                statusEl.textContent = '接続完了（走行中）';
+                
+                let lastRevs = null;
+
+                // センサーからデータが届いたときのイベント
+                characteristic.startNotifications();
+                characteristic.addEventListener('characteristicvaluechanged', (event) => {
+                    const value = event.target.value;
+                    const flags = value.getUint8(0);
+                    const isWheelDataPresent = flags & 1;
+                    const isCrankDataPresent = flags & 2;
+
+                    let currentRevs = null;
+                    let offset = 1;
+
+                    if (isWheelDataPresent) {
+                        currentRevs = value.getUint32(offset, true); // Cumulative Wheel Revolutions
+                        offset += 6;
+                    } else if (isCrankDataPresent) {
+                        currentRevs = value.getUint16(offset, true); // Cumulative Crank Revolutions
+                        offset += 4;
+                    }
+
+                    // 前回値と比較してペダルが回っていたら前進
+                    if (currentRevs !== null) {
+                        if (lastRevs !== null && currentRevs > lastRevs) {
+                            const links = panorama.getLinks();
+                            if (links && links.length > 0) {
+                                // 正面に近いリンク（あるいは最初のリンク）へ移動
+                                panorama.setPano(links[0].pano);
+                            }
+                        }
+                        lastRevs = currentRevs;
+                    }
+                });
+                
                 device.addEventListener('gattserverdisconnected', () => {
                     statusEl.textContent = '切断されました';
                 });
@@ -106,7 +141,7 @@
         });
 
         document.getElementById('applyPanoBtn').addEventListener('click', () => {
-            const newId = document.getElementById('panoInput'.trim()).value;
+            const newId = document.getElementById('panoInput').value.trim();
             if(newId) {
                 localStorage.setItem('bike_last_pano', newId);
                 location.reload();
